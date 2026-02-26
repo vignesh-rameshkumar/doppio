@@ -1,3 +1,4 @@
+import json
 import click
 import subprocess
 
@@ -54,12 +55,10 @@ class SPAGenerator:
 
 		add_routing_rule_to_hooks(self.app, self.spa_name)
 
-		click.echo(f"Run: cd {self.spa_path.absolute().resolve()} && npm run dev")
+		click.echo(f"Run: cd {self.spa_path.absolute().resolve()} && yarn dev")
 		click.echo("to start the development server and visit: http://<site>:8080")
 
 	def setup_tailwindcss(self):
-		# TODO: Convert to yarn command
-		# npm install -D tailwindcss@latest postcss@latest autoprefixer@latest
 		subprocess.run(
 			[
 				"npm",
@@ -72,22 +71,16 @@ class SPAGenerator:
 			cwd=self.spa_path,
 		)
 
-		# npx tailwindcss init -p
 		subprocess.run(["npx", "tailwindcss", "init", "-p"], cwd=self.spa_path)
 
-		# Create an index.css file
 		index_css_path: Path = self.spa_path / "src/index.css"
 
-		# Add boilerplate code
 		INDEX_CSS_BOILERPLATE = """@tailwind base;
 @tailwind components;
 @tailwind utilities;
-	"""
-
+"""
 		create_file(index_css_path, INDEX_CSS_BOILERPLATE)
 
-		# Populate content property in tailwind config file
-		# the extension of config can be .js or .ts, so we need to check for both
 		tailwind_config_path: Path = self.spa_path / "tailwind.config.js"
 		if not tailwind_config_path.exists():
 			tailwind_config_path = self.spa_path / "tailwind.config.ts"
@@ -114,13 +107,9 @@ class SPAGenerator:
 		create_file(login_vue, LOGIN_VUE_BOILERPLATE)
 
 	def setup_vue_router(self):
-		# Setup vue router
 		router_dir_path: Path = self.spa_path / "src/router"
-
-		# Create router directory
 		router_dir_path.mkdir()
 
-		# Create files
 		router_index_file = router_dir_path / "index.js"
 		create_file(
 			router_index_file, ROUTER_INDEX_BOILERPLATE.replace("{{name}}", self.spa_name)
@@ -130,7 +119,6 @@ class SPAGenerator:
 		create_file(auth_routes_file, AUTH_ROUTES_BOILERPLATE)
 
 	def initialize_vue_vite_project(self):
-		# Run "yarn create vite {name} --template vue"
 		print("Scafolding vue project...")
 		if self.use_typescript:
 			subprocess.run(
@@ -141,15 +129,12 @@ class SPAGenerator:
 				["yarn", "create", "vite", self.spa_name, "--template", "vue"], cwd=self.app_path
 			)
 
-		# Install router and other npm packages
-		# yarn add vue-router@4 socket.io-client@4.5.1
 		print("Installing dependencies...")
 		subprocess.run(
 			["yarn", "add", "vue-router@^4", "socket.io-client@^4.5.1"], cwd=self.spa_path
 		)
 
 	def link_controller_files(self):
-		# Link controller files in main.js/main.ts
 		print("Linking controller files...")
 		main_js: Path = self.app_path / (
 			f"{self.spa_name}/src/main.ts"
@@ -161,17 +146,14 @@ class SPAGenerator:
 			with main_js.open("w") as f:
 				boilerplate = MAIN_JS_BOILERPLATE
 
-				# Add css import
 				if self.add_tailwindcss:
 					boilerplate = "import './index.css';\n" + boilerplate
 
 				f.write(boilerplate)
 		else:
 			click.echo("src/main.js not found!")
-			return
 
 	def setup_proxy_options(self):
-		# Setup proxy options file
 		proxy_options_file: Path = self.spa_path / "proxyOptions.js"
 		create_file(proxy_options_file, PROXY_OPTIONS_BOILERPLATE)
 
@@ -188,7 +170,6 @@ class SPAGenerator:
 
 	def create_www_directory(self):
 		www_dir_path: Path = self.app_path / f"{self.app}/www"
-
 		if not www_dir_path.exists():
 			www_dir_path.mkdir()
 
@@ -197,7 +178,6 @@ class SPAGenerator:
 		with index_html_file_path.open("r") as f:
 			current_html = f.read()
 
-		# For attaching CSRF Token
 		updated_html = current_html.replace(
 			"</div>", "</div>\n\t\t<script>window.csrf_token = '{{ frappe.session.csrf_token }}';</script>"
 		)
@@ -212,27 +192,86 @@ class SPAGenerator:
 		if self.use_typescript:
 			template += "-ts"
 
-		# Use npx instead of yarn to avoid incompatible create-vite@7
+		# Step 1: Scaffold only (create-vite writes files but does NOT run yarn install)
 		subprocess.run(
-			["npx", f"create-vite@6.1.0", self.spa_name, "--template", template],
+			["npx", "create-vite@6.1.0", self.spa_name, "--template", template],
 			cwd=self.app_path,
 			check=True
 		)
 
-		# Ensure vite version is also fixed in devDependencies
+		# Step 2: Patch package.json BEFORE yarn install to fix Node 18 incompatibility.
+		# create-vite@6.1.0 react-ts template ships "typescript-eslint": "^8.x" which
+		# pulls eslint-visitor-keys@5 requiring Node >=20. We replace it with the
+		# split @typescript-eslint v7 packages that support Node >=18.
+		if self.use_typescript:
+			self._patch_react_ts_package_json()
+			self._write_eslint_config_v7()
+
+		# Step 3: Pin vite version in devDependencies
+		pkg_json_path = self.spa_path / "package.json"
+		with pkg_json_path.open("r") as f:
+			pkg = json.load(f)
+		pkg.setdefault("devDependencies", {})["vite"] = "6.1.0"
+		with pkg_json_path.open("w") as f:
+			json.dump(pkg, f, indent=2)
+
+		# Step 4: Now run yarn install with the patched package.json
 		subprocess.run(
-			["yarn", "add", "-D", "vite@6.1.0"],
+			["yarn", "install"],
 			cwd=self.spa_path,
 			check=True
 		)
 
-		# Add necessary runtime deps
+		# Step 5: Add runtime deps
 		subprocess.run(
 			["yarn", "add", "frappe-react-sdk", "socket.io-client@^4.5.1"],
 			cwd=self.spa_path,
 			check=True
 		)
 
+	def _patch_react_ts_package_json(self):
+		"""
+		Replaces the Node 20-only 'typescript-eslint' v8 unified package with
+		the split '@typescript-eslint/eslint-plugin' + '@typescript-eslint/parser'
+		v7 packages, which fully support Node 18.
+		Also removes 'eslint-visitor-keys' if it snuck in as a direct dep.
+		"""
+		pkg_json_path = self.spa_path / "package.json"
+		with pkg_json_path.open("r") as f:
+			pkg = json.load(f)
+
+		dev_deps = pkg.get("devDependencies", {})
+
+		# Remove the unified v8 package (requires Node >=20)
+		dev_deps.pop("typescript-eslint", None)
+
+		# Pin split v7 packages (last major line supporting Node 18)
+		dev_deps["@typescript-eslint/eslint-plugin"] = "^7.18.0"
+		dev_deps["@typescript-eslint/parser"] = "^7.18.0"
+
+		# Also cap eslint to v8 to match @typescript-eslint v7 peer requirements
+		# (@typescript-eslint v7 supports eslint ^8.56.0)
+		if "eslint" in dev_deps:
+			dev_deps["eslint"] = "^8.57.0"
+
+		pkg["devDependencies"] = dev_deps
+
+		with pkg_json_path.open("w") as f:
+			json.dump(pkg, f, indent=2)
+
+		click.echo("✔ Patched package.json: replaced typescript-eslint v8 with @typescript-eslint v7 (Node 18 compatible)")
+
+	def _write_eslint_config_v7(self):
+		"""
+		create-vite react-ts generates an eslint.config.js using the new flat-config
+		API from typescript-eslint v8. Since we're downgrading to v7 (which uses the
+		legacy config API), we overwrite eslint.config.js with a compatible version.
+		"""
+		eslint_config_path = self.spa_path / "eslint.config.js"
+		# Write a v7-compatible flat-config shim
+		eslint_config_content = REACT_TS_ESLINT_CONFIG_BOILERPLATE
+		create_file(eslint_config_path, eslint_config_content)
+		click.echo("✔ Wrote eslint.config.js compatible with @typescript-eslint v7 and Node 18")
 
 	def setup_react_vite_config(self):
 		vite_config_file: Path = self.spa_path / (
