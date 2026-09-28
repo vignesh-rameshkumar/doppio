@@ -129,6 +129,25 @@ class FrappeRule:
         return self.findings
 
 
+def safe_unparse(node: ast.AST) -> str:
+    try:
+        return ast.unparse(node)
+    except Exception:
+        return ""
+
+
+def is_whitelisted(func) -> bool:
+    """True if a FunctionDef/AsyncFunctionDef is decorated @frappe.whitelist(...).
+    Shared by every rule that cares whether a function is request-reachable
+    (FRP-SEC001, FRP-TXN001, FRP-TXN002) -- kept in one place so "what counts
+    as request-facing" can't drift between them."""
+    for dec in func.decorator_list:
+        name = safe_unparse(dec.func) if isinstance(dec, ast.Call) else safe_unparse(dec)
+        if name == "frappe.whitelist":
+            return True
+    return False
+
+
 WILDCARD = "{*}"
 
 

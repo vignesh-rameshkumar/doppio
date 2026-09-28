@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import ast
 
-from doppio.frappe_lint.engine import FrappeRule, RuleContext, rule
+from doppio.frappe_lint.engine import FrappeRule, RuleContext, rule, is_whitelisted, safe_unparse
 
 _TAINT_SOURCE_PREFIXES = (
     "frappe.form_dict", "frappe.local.form_dict",
@@ -53,25 +53,10 @@ _TAINT_SOURCE_PREFIXES = (
 _MAX_RESOLVE_DEPTH = 4
 
 
-def _unparse(node: ast.AST) -> str:
-    try:
-        return ast.unparse(node)
-    except Exception:
-        return ""
-
-
-def _is_whitelisted(func) -> bool:
-    for dec in func.decorator_list:
-        name = _unparse(dec.func) if isinstance(dec, ast.Call) else _unparse(dec)
-        if name == "frappe.whitelist":
-            return True
-    return False
-
-
 def _expr_touches_taint_source(node: ast.AST) -> bool:
     for sub in ast.walk(node):
         if isinstance(sub, (ast.Attribute, ast.Subscript, ast.Call)):
-            if _unparse(sub).startswith(_TAINT_SOURCE_PREFIXES):
+            if safe_unparse(sub).startswith(_TAINT_SOURCE_PREFIXES):
                 return True
     return False
 
@@ -124,16 +109,16 @@ def _find_tainted_interpolation(sql_arg: ast.AST, tainted: set[str], locals_map:
     if isinstance(sql_arg, ast.JoinedStr):
         for v in sql_arg.values:
             if isinstance(v, ast.FormattedValue) and _expr_is_tainted(v.value, tainted):
-                return _unparse(v.value)
+                return safe_unparse(v.value)
         return None
-    if isinstance(sql_arg, ast.Call) and _unparse(sql_arg.func).endswith(".format"):
+    if isinstance(sql_arg, ast.Call) and safe_unparse(sql_arg.func).endswith(".format"):
         for a in list(sql_arg.args) + [kw.value for kw in sql_arg.keywords]:
             if _expr_is_tainted(a, tainted):
-                return _unparse(a)
+                return safe_unparse(a)
         return None
     if isinstance(sql_arg, ast.BinOp) and isinstance(sql_arg.op, ast.Mod):
         if _expr_is_tainted(sql_arg.right, tainted):
-            return _unparse(sql_arg.right)
+            return safe_unparse(sql_arg.right)
         return None
     if isinstance(sql_arg, ast.Name) and sql_arg.id in locals_map:
         return _find_tainted_interpolation(locals_map[sql_arg.id], tainted, locals_map, depth + 1)
@@ -153,7 +138,7 @@ class SqlInjectionRisk(FrappeRule):
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             seed = set()
-            if _is_whitelisted(func):
+            if is_whitelisted(func):
                 seed |= {a.arg for a in func.args.args}
                 seed |= {a.arg for a in func.args.kwonlyargs}
             tainted = _propagate_taint(func, seed)
@@ -162,7 +147,7 @@ class SqlInjectionRisk(FrappeRule):
             for node in ast.walk(func):
                 if not isinstance(node, ast.Call) or not node.args:
                     continue
-                if _unparse(node.func) != "frappe.db.sql":
+                if safe_unparse(node.func) != "frappe.db.sql":
                     continue
                 culprit = _find_tainted_interpolation(node.args[0], tainted, locals_map)
                 if culprit:
