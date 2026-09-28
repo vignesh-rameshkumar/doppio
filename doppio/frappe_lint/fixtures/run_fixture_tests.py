@@ -64,8 +64,9 @@ def _hits_for_side(rule_id: str, files: list[str], root: str, schema: SchemaInde
     return out
 
 
-def main(apps_root: str) -> int:
-    schema = SchemaIndex.build(apps_root)  # built once, reused for every rule/side
+def main(apps_root: str | None) -> int:
+    from doppio.frappe_lint.cli import require_apps_root
+    schema = SchemaIndex.build(require_apps_root(apps_root))  # built once, reused for every rule/side
     tier_b_by_id = {c.rule_id: c for c in registered_rules()}
     yaml_by_id = {r.id: r for r in load_yaml_rules(_RULES_DIR)}
 

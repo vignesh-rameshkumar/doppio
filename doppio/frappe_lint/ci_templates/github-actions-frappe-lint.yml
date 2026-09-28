@@ -1,0 +1,73 @@
+# frappe-lint CI workflow -- TEMPLATE.
+#
+# Copy this file into the TARGET app's own repo as
+# .github/workflows/frappe-lint.yml, then replace every <APP_NAME> below
+# with that app's name (e.g. "core").
+#
+# Why this does NOT need a full bench: verified in this session that the
+# frappe_lint engine itself never imports frappe -- it's pure AST analysis
+# plus reading DocType JSON files directly off disk. So this workflow
+# only needs Python, PyYAML, and tomli -- no `bench init`, no MySQL/Redis
+# services, no frappe install. That's what makes this runnable on a plain
+# `ubuntu-latest` runner (this app's existing develop-to-qa.yml already
+# uses one) rather than needing a self-hosted runner with a pre-provisioned
+# bench, or a from-scratch bench bootstrap in CI.
+#
+# What this DOES assume, stated rather than silently required:
+#   1. doppio is checked out from https://github.com/vignesh-rameshkumar/doppio
+#      -- currently a personal repo, not the AgnikulCosmos org. If that repo
+#      is private, add a PAT with read access as a repo secret (e.g.
+#      DOPPIO_CHECKOUT_TOKEN) and pass it as `token:` on the doppio checkout
+#      step below. If/when doppio moves to an org repo, update the one
+#      `repository:` line below.
+#   2. This app's own repo root has frappe_lint.toml, .frappe_lint_baseline.json,
+#      and .frappe_lint_schema_cache.json committed (see `bench lint-schema
+#      <APP_NAME>` / `bench lint-baseline <APP_NAME>`). Without a baseline,
+#      every pre-existing finding shows up as "new" and this workflow will
+#      fail on day one -- that's a deliberate choice to make, not a bug.
+#   3. .frappe_lint_schema_cache.json is kept reasonably fresh. It's a
+#      snapshot of every DocType across the whole bench at the time it was
+#      generated; regenerate it (`bench lint-schema <APP_NAME>`) whenever a
+#      DocType changes anywhere in the bench, in this app or any other.
+
+name: frappe-lint
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout <APP_NAME>
+        uses: actions/checkout@v4
+        with:
+          path: <APP_NAME>
+
+      - name: Checkout doppio (frappe_lint engine)
+        uses: actions/checkout@v4
+        with:
+          repository: vignesh-rameshkumar/doppio
+          path: doppio
+          # token: ${{ secrets.DOPPIO_CHECKOUT_TOKEN }}   # uncomment if doppio is private
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"   # match the bench's Python version
+
+      - name: Install frappe_lint's runtime deps
+        run: pip install pyyaml tomli
+
+      - name: Run frappe-lint
+        working-directory: <APP_NAME>
+        env:
+          PYTHONPATH: ${{ github.workspace }}/doppio
+        run: |
+          python3 -m doppio.frappe_lint.cli check <APP_NAME> \
+            --config frappe_lint.toml \
+            --baseline .frappe_lint_baseline.json \
+            --schema-cache .frappe_lint_schema_cache.json \
+            --rules-dir "${{ github.workspace }}/doppio/doppio/frappe_lint/rules.d" \
+            --format text

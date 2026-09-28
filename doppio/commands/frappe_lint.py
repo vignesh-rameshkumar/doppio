@@ -38,10 +38,10 @@ def _apps_root():
 def lint(app, subpath, fmt, fail_on, no_baseline, show_baselined):
     """Lint an installed app's Python code with frappe-lint."""
     from doppio.frappe_lint.baseline import load_baseline, split_baselined
-    from doppio.frappe_lint.cli import resolve_app_paths, run_check, print_report
+    from doppio.frappe_lint.cli import resolve_app_paths, run_check, print_report, require_apps_root
     from doppio.frappe_lint.config import LintConfig
 
-    apps_root = _apps_root()
+    apps_root = require_apps_root(_apps_root())
     locations = resolve_app_paths(app, apps_root)
     if not os.path.isdir(locations["scan_path"]):
         click.echo(f"'{app}' has no importable package at {locations['scan_path']}", err=True)
@@ -66,10 +66,10 @@ def lint(app, subpath, fmt, fail_on, no_baseline, show_baselined):
 def lint_baseline(app, subpath):
     """Freeze this app's current findings so `bench lint` only gates on new ones."""
     from doppio.frappe_lint.baseline import save_baseline
-    from doppio.frappe_lint.cli import resolve_app_paths, run_check
+    from doppio.frappe_lint.cli import resolve_app_paths, run_check, require_apps_root
     from doppio.frappe_lint.config import LintConfig
 
-    apps_root = _apps_root()
+    apps_root = require_apps_root(_apps_root())
     locations = resolve_app_paths(app, apps_root)
     scan_path = os.path.join(locations["app_root"], subpath) if subpath else locations["scan_path"]
     config = LintConfig.load(locations["config"])
@@ -85,10 +85,10 @@ def lint_schema(app):
     """Snapshot the whole bench's DocType schema into <app>'s own repo, so
     CI (which checks out only that one app, not the full bench) can run
     the schema-aware rules without the sibling apps present."""
-    from doppio.frappe_lint.cli import resolve_app_paths
+    from doppio.frappe_lint.cli import resolve_app_paths, require_apps_root
     from doppio.frappe_lint.schema import SchemaIndex
 
-    apps_root = _apps_root()
+    apps_root = require_apps_root(_apps_root())
     locations = resolve_app_paths(app, apps_root)
     schema = SchemaIndex.build(apps_root)
     schema.to_json(locations["schema_cache"])

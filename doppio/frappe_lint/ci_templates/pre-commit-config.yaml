@@ -1,0 +1,34 @@
+# frappe-lint pre-commit hook -- TEMPLATE.
+#
+# Copy this file to the TARGET app's repo root as `.pre-commit-config.yaml`
+# (or merge this hook into an existing one) and replace <APP_NAME> below
+# with that app's name (e.g. "core"). Then:
+#
+#   pip install pre-commit          # once, if not already available
+#   pre-commit install              # once per clone, from the app's repo root
+#
+# This hook needs to run from inside an activated bench environment --
+# `bench lint` is a bench command, not a standalone pip package -- so it
+# uses `language: system` to reuse whatever `bench` already resolves to in
+# your shell, rather than pre-commit's usual per-hook isolated virtualenv.
+#
+# Known limitation: `bench lint <APP_NAME>` always lints the whole app,
+# there's no "only the files in this commit" mode wired into the bench
+# command yet (the underlying CLI supports `--path`, but pre-commit wants
+# to pass a list of changed files, which isn't wired up). That means this
+# hook runs the full lint on every commit -- correct, but not fast on a
+# large app. Speeding this up to changed-files-only is real future work,
+# not done here.
+
+repos:
+  - repo: local
+    hooks:
+      - id: frappe-lint
+        name: frappe-lint (bench lint <APP_NAME>)
+        entry: bench lint <APP_NAME>
+        language: system
+        pass_filenames: false
+        files: \.py$
+        # Uncomment to block the commit on any new error (default already
+        # exits non-zero on a new error via `bench lint`'s own exit code):
+        # verbose: true

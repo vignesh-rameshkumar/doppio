@@ -29,16 +29,24 @@ SEVERITY_COLOR = {"error": "\033[31m", "warn": "\033[33m", "info": "\033[36m"}
 RESET = "\033[0m"
 
 
-def get_bench_apps_root() -> str:
-    """Resolve <bench>/apps the proper way when frappe is importable (i.e.
-    when running inside a bench's own venv, which is how `bench
-    frappe-lint-*` always invokes this). Falls back to a relative-path
-    guess (../../ from this file) for standalone use outside a bench."""
+def get_bench_apps_root() -> str | None:
+    """Resolve <bench>/apps the reliable way: frappe importable means we're
+    genuinely running inside a bench's own venv (always true via `bench
+    lint`). Returns None otherwise -- e.g. the standalone CLI in a bare CI
+    checkout with no frappe installed -- rather than guessing a relative
+    path. That guess used to be `_HERE/../../..`, which happened to land on
+    a real bench `apps/` directory in local testing purely because doppio
+    sits exactly three levels under it here; in a real CI checkout (just
+    the target app + doppio, no sibling apps) the same guess resolves to
+    the workspace root, and silently walking it finds only those two
+    repos' DocTypes -- an incomplete schema with no error, not a loud
+    failure. Callers must treat None as "no reliable apps_root" and
+    require --schema-cache instead; see _load_schema below."""
     try:
         import frappe.utils
         return os.path.join(frappe.utils.get_bench_path(), "apps")
     except Exception:
-        return os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
+        return None
 
 
 def resolve_app_paths(app_name: str, apps_root: str) -> dict:
@@ -68,13 +76,36 @@ def _iter_py_files(paths: list[str]):
                         yield os.path.join(dirpath, fn)
 
 
-def _load_schema(apps_root: str, schema_cache: str | None) -> SchemaIndex:
-    if schema_cache and os.path.exists(schema_cache):
-        return SchemaIndex.load_cache(schema_cache)
+def _load_schema(apps_root: str | None, schema_cache: str | None) -> SchemaIndex:
+    if schema_cache:
+        if os.path.exists(schema_cache):
+            return SchemaIndex.load_cache(schema_cache)
+        if not apps_root:
+            # Explicitly asked for a cache file that isn't there, AND no
+            # reliable apps_root to fall back to -- almost certainly a
+            # forgotten `bench lint-schema <app>` step, not an intentional
+            # choice. Erroring here is the whole point: silently building
+            # an incomplete schema from a wrong directory would look like
+            # success and just be wrong.
+            raise SystemExit(
+                f"--schema-cache was given as '{schema_cache}' but that file doesn't exist, "
+                f"and there's no reliable --apps-root to fall back to (this doesn't look like "
+                f"it's running inside a real bench). Generate the cache with "
+                f"'bench lint-schema <app>' where the full bench is present, and commit it."
+            )
+        # schema_cache missing but apps_root IS reliable (e.g. `bench lint`
+        # before `bench lint-schema` has ever been run locally) -- fine,
+        # walking the real bench directly is just as correct.
+    if not apps_root:
+        raise SystemExit(
+            "No --schema-cache and no reliable --apps-root -- can't resolve the DocType "
+            "schema at all. Generate a cache with 'bench lint-schema <app>' and pass it "
+            "via --schema-cache, or run this from inside a real bench."
+        )
     return SchemaIndex.build(apps_root)
 
 
-def run_check(paths: list[str], apps_root: str, config: LintConfig, rules_dir: str,
+def run_check(paths: list[str], apps_root: str | None, config: LintConfig, rules_dir: str,
               schema_cache: str | None = None) -> list[Diagnostic]:
     schema = _load_schema(apps_root, schema_cache)
     project = ProjectIndex.build(paths[0] if len(paths) == 1 else os.path.commonpath(paths))
@@ -161,8 +192,23 @@ def cmd_baseline_update(args):
     return 0
 
 
+def require_apps_root(apps_root: str | None) -> str:
+    """dump-schema fundamentally needs to walk a real bench -- there's no
+    cache to fall back to here, this command IS what generates the cache.
+    Fail with a clear message rather than crash inside SchemaIndex.build
+    on a None path."""
+    if not apps_root:
+        raise SystemExit(
+            "No reliable --apps-root (this doesn't look like it's running inside a real "
+            "bench -- frappe isn't importable). dump-schema has to walk a real bench's "
+            "apps/ directory; run this via 'bench lint-schema <app>' instead, or pass "
+            "--apps-root explicitly if you know the right path."
+        )
+    return apps_root
+
+
 def cmd_dump_schema(args):
-    schema = SchemaIndex.build(args.apps_root)
+    schema = SchemaIndex.build(require_apps_root(args.apps_root))
     schema.to_json(args.out)
     print(f"schema cache written: {args.out}  ({len(schema.doctypes)} doctypes from {args.apps_root})")
     return 0
