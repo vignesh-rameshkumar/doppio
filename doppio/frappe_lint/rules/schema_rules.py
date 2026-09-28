@@ -8,8 +8,18 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 
 from doppio.frappe_lint.engine import FrappeRule, RuleContext, rule
+
+# A plausible Python dotted import path: "module.sub.func". Deliberately
+# app-name-agnostic (earlier drafts hardcoded "core."/"frappe."/"erpnext."
+# which only worked because this was first built against one specific
+# app) -- real disambiguation happens below by checking whether the path
+# actually resolves to a file in this project's own index; anything that
+# doesn't resolve is assumed to belong to a different installed app and
+# silently skipped, same as before.
+_DOTTED_PATH_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$")
 
 _DOCTYPE_CALL_NAMES = {
     "frappe.get_all", "frappe.get_list", "frappe.db.get_all",
@@ -141,9 +151,7 @@ class HooksDottedPathMissing(FrappeRule):
     def visit_Constant(self, node: ast.Constant, ctx: RuleContext):
         if os.path.basename(ctx.path) != "hooks.py":
             return None
-        if not isinstance(node.value, str) or "." not in node.value or " " in node.value:
-            return None
-        if not node.value.startswith(("core.", "frappe.", "erpnext.")):
+        if not isinstance(node.value, str) or not _DOTTED_PATH_RE.match(node.value):
             return None
         if ctx.project is None:
             return None

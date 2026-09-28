@@ -47,7 +47,10 @@ class SchemaIndex:
         if info is None:
             return True  # unknown doctype is SCH001's problem, not SCH002's
         base = fieldname.split(".")[0].strip()
-        if not base or base.startswith("`") or base == "*":
+        if not base or base.startswith("`") or base == "*" or "(" in base:
+            # backtick-quoted raw SQL, "*", and SQL expressions like
+            # "count(name) as total" aren't real fieldnames -- can't resolve
+            # them against the schema, so don't flag them as unknown.
             return True
         return base in info.fields or base in IMPLICIT_FIELDS
 

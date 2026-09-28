@@ -3,6 +3,7 @@ message: "print() left in application code -- use frappe.logger() so it lands in
 severity: warn
 node_kind: call
 call: print
+forbidden: true
 path_exclude:
   - "/commands/"
   - "test_"
