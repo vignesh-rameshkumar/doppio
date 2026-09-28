@@ -1,0 +1,6 @@
+id: FRP-API001
+message: "@frappe.whitelist() with no methods=[...] -- accepts GET and POST alike"
+severity: warn
+node_kind: call
+call: frappe.whitelist
+require_kwarg: methods

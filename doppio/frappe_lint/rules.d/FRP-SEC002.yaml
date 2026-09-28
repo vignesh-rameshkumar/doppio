@@ -1,0 +1,7 @@
+id: FRP-SEC002
+message: "@frappe.whitelist(allow_guest=True) exposes this endpoint with no auth"
+severity: error
+node_kind: call
+call: frappe.whitelist
+forbidden_kwarg_value:
+  allow_guest: true

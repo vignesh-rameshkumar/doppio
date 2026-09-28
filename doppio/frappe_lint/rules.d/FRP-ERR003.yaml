@@ -1,0 +1,4 @@
+id: FRP-ERR003
+message: "'except ...: pass' silently swallows the error -- log it or narrow the exception type"
+severity: error
+node_kind: except_pass

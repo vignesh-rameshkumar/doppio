@@ -1,0 +1,8 @@
+id: FRP-OBS001
+message: "print() left in application code -- use frappe.logger() so it lands in log files, not stdout"
+severity: warn
+node_kind: call
+call: print
+path_exclude:
+  - "/commands/"
+  - "test_"

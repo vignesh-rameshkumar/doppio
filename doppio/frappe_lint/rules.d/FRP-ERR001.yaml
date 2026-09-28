@@ -1,0 +1,4 @@
+id: FRP-ERR001
+message: "bare 'except:' catches SystemExit/KeyboardInterrupt too -- use 'except Exception:' at least"
+severity: error
+node_kind: bare_except

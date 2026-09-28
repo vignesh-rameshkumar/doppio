@@ -2,6 +2,7 @@ import click
 import subprocess
 from .spa_generator import SPAGenerator
 from .utils import add_build_command_to_package_json, add_routing_rule_to_hooks
+from .frappe_lint import commands as frappe_lint_commands
 
 
 @click.command("add-spa")
@@ -62,4 +63,4 @@ def add_frappe_ui_starter(name, app):
 	add_routing_rule_to_hooks(app, name)
 
 
-commands = [generate_spa, add_frappe_ui]
+commands = [generate_spa, add_frappe_ui, *frappe_lint_commands]

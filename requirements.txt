@@ -1,2 +1,6 @@
 # frappe -- https://github.com/frappe/frappe is installed via 'bench init'
 Click~=8.1.3
+
+# frappe_lint (bench frappe-lint-* commands)
+PyYAML~=6.0     # already a transitive dep of frappe itself; pinned to the same range here since we import it directly
+tomli~=2.0      # frappe_lint.toml parsing -- same parser as stdlib tomllib on Python 3.11+
