@@ -70,7 +70,7 @@ website_route_rules = [
 # ------------
 
 # before_install = "doppio.install.before_install"
-# after_install = "doppio.install.after_install"
+after_install = "doppio.install.after_install"
 
 # Desk Notifications
 # ------------------

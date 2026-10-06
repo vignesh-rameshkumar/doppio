@@ -128,6 +128,40 @@ def lint_selftest():
     sys.exit(1 if (fixtures_rc or baseline_rc) else 0)
 
 
+@click.command("lint-lsp")
+def lint_lsp():
+    """Start the frappe-lint language server on stdio, for live in-editor
+    diagnostics. Point your editor's LSP client at `bench lint-lsp` (run
+    from inside an activated bench, same requirement as every other
+    lint* command) -- see frappe_lint/README.md for editor setup."""
+    from doppio.frappe_lint.lsp.server import main as run_lsp
+    run_lsp()
+
+
+@click.command("lint-vscode-install")
+def lint_vscode_install():
+    """Package and install the frappe-lint VS Code extension into your
+    actual VS Code (not a throwaway dev host). Runs automatically on
+    'bench install-app doppio' if VS Code is present; run this by hand
+    to (re)install -- e.g. VS Code wasn't installed yet, or after an
+    extension update."""
+    from doppio.frappe_lint.vscode_install import install
+    ok = install(echo=click.echo)
+    sys.exit(0 if ok else 1)
+
+
+@click.command("lint-lsp-watch")
+@click.argument("path")
+def lint_lsp_watch(path):
+    """Watch one file and print live diagnostics as it changes -- a way to
+    see frappe-lint's live-editing behavior working without setting up an
+    editor's LSP client first. Edit the file with any tool; this polls it
+    and re-lints on change. Ctrl+C to stop."""
+    from doppio.frappe_lint.lsp.watch_file import main as run_watch
+    sys.argv = [sys.argv[0], path]
+    sys.exit(run_watch())
+
+
 def _rules_dir():
     here = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(os.path.dirname(here), "frappe_lint", "rules.d")
@@ -139,4 +173,7 @@ commands = [
     lint_schema,
     lint_rules,
     lint_selftest,
+    lint_lsp,
+    lint_lsp_watch,
+    lint_vscode_install,
 ]

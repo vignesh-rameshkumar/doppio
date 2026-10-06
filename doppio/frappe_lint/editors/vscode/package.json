@@ -1,0 +1,31 @@
+{
+  "name": "frappe-lint",
+  "displayName": "frappe-lint",
+  "publisher": "doppio",
+  "description": "Live diagnostics from frappe-lint (bench lint-lsp) for Frappe apps.",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Linters"],
+  "activationEvents": ["onLanguage:python"],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "frappe-lint",
+      "properties": {
+        "frappeLint.benchPythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional override. By default this is auto-detected by walking up from the open workspace/file to find sites/apps.txt (the bench marker) and using <bench>/env/bin/python3. Only set this if your bench has a non-standard layout."
+        },
+        "frappeLint.doppioPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional override for <bench>/apps/doppio. Same auto-detection as benchPythonPath applies; only set this if it guesses wrong."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
