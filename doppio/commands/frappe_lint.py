@@ -120,12 +120,14 @@ def lint_rules():
 def lint_selftest():
     """Run the bad.py/good.py fixture pairs shipped with every rule -- the
     check that stops a rule shipping with an unverified false-positive rate
-    -- plus the baseline-portability regression test."""
+    -- plus the baseline-portability and VS Code packaging regression tests."""
     from doppio.frappe_lint.fixtures.run_fixture_tests import main as run_fixtures
     from doppio.frappe_lint.selftest_baseline import main as run_baseline_test
+    from doppio.frappe_lint.selftest_vsix import main as run_vsix_test
     fixtures_rc = run_fixtures(_apps_root())
     baseline_rc = run_baseline_test()
-    sys.exit(1 if (fixtures_rc or baseline_rc) else 0)
+    vsix_rc = run_vsix_test()
+    sys.exit(1 if (fixtures_rc or baseline_rc or vsix_rc) else 0)
 
 
 @click.command("lint-lsp")
