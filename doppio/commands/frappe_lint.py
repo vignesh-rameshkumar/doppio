@@ -52,7 +52,7 @@ def lint(app, subpath, fmt, fail_on, no_baseline, show_baselined):
     diags = run_check([scan_path], apps_root, config, _rules_dir(), locations["schema_cache"])
 
     baseline_keys = set() if no_baseline else load_baseline(locations["baseline"])
-    new, baselined = split_baselined(diags, baseline_keys)
+    new, baselined = split_baselined(diags, baseline_keys, locations["baseline"])
     print_report(diags, new, baselined, show_baselined, sys.stdout.isatty(), fmt)
 
     gate = diags if fail_on == "all" else new
@@ -119,9 +119,13 @@ def lint_rules():
 @click.command("lint-selftest")
 def lint_selftest():
     """Run the bad.py/good.py fixture pairs shipped with every rule -- the
-    check that stops a rule shipping with an unverified false-positive rate."""
+    check that stops a rule shipping with an unverified false-positive rate
+    -- plus the baseline-portability regression test."""
     from doppio.frappe_lint.fixtures.run_fixture_tests import main as run_fixtures
-    sys.exit(run_fixtures(_apps_root()))
+    from doppio.frappe_lint.selftest_baseline import main as run_baseline_test
+    fixtures_rc = run_fixtures(_apps_root())
+    baseline_rc = run_baseline_test()
+    sys.exit(1 if (fixtures_rc or baseline_rc) else 0)
 
 
 def _rules_dir():

@@ -82,9 +82,11 @@ def run_yaml_rules(rules: list[YamlRule], path: str, tree: ast.AST) -> list[Diag
     # Decorator Call nodes (e.g. the `frappe.whitelist(...)` in `@frappe.whitelist()`)
     # are already reachable through the plain ast.Call branch below via ast.walk,
     # since decorator_list is just another child list on the FunctionDef. Track
-    # their ids so we check each one exactly once, anchored to the def line
-    # (more useful than the decorator's own line, and it avoids double-reporting
-    # the same violation once per branch).
+    # their ids so we check each one exactly once. Anchored to the DECORATOR's
+    # own span, not the FunctionDef's -- the decorator is what's actually wrong,
+    # and using the FunctionDef's end_lineno/end_col_offset for the highlight
+    # would span the entire function body (a FunctionDef's "end" is the end of
+    # its last statement), not just the offending line.
     decorator_ids: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -96,8 +98,10 @@ def run_yaml_rules(rules: list[YamlRule], path: str, tree: ast.AST) -> list[Diag
                             continue
                         msg = r.check_call(dec)
                         if msg:
-                            out.append(Diagnostic(rule_id=r.id, message=msg, file=path,
-                                                   line=node.lineno, severity=r.severity, origin="yaml"))
+                            out.append(Diagnostic(
+                                rule_id=r.id, message=msg, file=path, severity=r.severity,
+                                origin="yaml", line=dec.lineno, col=dec.col_offset,
+                                end_line=dec.end_lineno, end_col=dec.end_col_offset))
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -108,15 +112,25 @@ def run_yaml_rules(rules: list[YamlRule], path: str, tree: ast.AST) -> list[Diag
                     continue
                 msg = r.check_call(node)
                 if msg:
-                    out.append(Diagnostic(rule_id=r.id, message=msg, file=path,
-                                           line=node.lineno, severity=r.severity, origin="yaml"))
+                    out.append(Diagnostic(
+                        rule_id=r.id, message=msg, file=path, severity=r.severity, origin="yaml",
+                        line=node.lineno, col=node.col_offset,
+                        end_line=node.end_lineno, end_col=node.end_col_offset))
         elif isinstance(node, ast.ExceptHandler):
+            # Only col, not end_line/end_col: an ExceptHandler's own "end" is
+            # the end of its body (it's a compound statement), so using it
+            # here would highlight the whole except block, not just the
+            # "except:" header. Leaving end unset falls back (in the LSP
+            # layer) to "rest of this one line" instead -- correct for a
+            # normally single-line except clause, and never worse than that.
             for r in applicable:
                 if r.node_kind == "bare_except" and node.type is None:
                     out.append(Diagnostic(rule_id=r.id, message=r.message, file=path,
-                                           line=node.lineno, severity=r.severity, origin="yaml"))
+                                           line=node.lineno, col=node.col_offset,
+                                           severity=r.severity, origin="yaml"))
                 elif r.node_kind == "except_pass" and node.type is not None \
                         and len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
                     out.append(Diagnostic(rule_id=r.id, message=r.message, file=path,
-                                           line=node.lineno, severity=r.severity, origin="yaml"))
+                                           line=node.lineno, col=node.col_offset,
+                                           severity=r.severity, origin="yaml"))
     return out

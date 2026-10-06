@@ -77,32 +77,44 @@ def _iter_py_files(paths: list[str]):
 
 
 def _load_schema(apps_root: str | None, schema_cache: str | None) -> SchemaIndex:
+    """Live-scan wins whenever a real bench is available -- ignoring the
+    cache even if one exists. Measured in this session: walking ~1200
+    DocTypes across a warm local filesystem takes well under a second
+    (the "~9s" quoted earlier was a cold-cache outlier during
+    development, not a stable property of the approach -- see the
+    breakdown in frappe_lint/README.md). At that cost there's no reason
+    to ever risk a stale cache locally -- add a DocType elsewhere in the
+    bench and forget to regenerate the cache, and a cache-preferring
+    linter would silently keep flagging it as unknown.
+
+    The cache is reached only when apps_root isn't reliable at all: CI,
+    or a solo app checkout, where the other apps' DocType JSON files
+    simply aren't present on disk to scan, live or otherwise. That's the
+    one thing caching actually buys -- portability, not speed."""
+    if apps_root:
+        return SchemaIndex.build(apps_root)
+
+    if schema_cache and os.path.exists(schema_cache):
+        return SchemaIndex.load_cache(schema_cache)
+
     if schema_cache:
-        if os.path.exists(schema_cache):
-            return SchemaIndex.load_cache(schema_cache)
-        if not apps_root:
-            # Explicitly asked for a cache file that isn't there, AND no
-            # reliable apps_root to fall back to -- almost certainly a
-            # forgotten `bench lint-schema <app>` step, not an intentional
-            # choice. Erroring here is the whole point: silently building
-            # an incomplete schema from a wrong directory would look like
-            # success and just be wrong.
-            raise SystemExit(
-                f"--schema-cache was given as '{schema_cache}' but that file doesn't exist, "
-                f"and there's no reliable --apps-root to fall back to (this doesn't look like "
-                f"it's running inside a real bench). Generate the cache with "
-                f"'bench lint-schema <app>' where the full bench is present, and commit it."
-            )
-        # schema_cache missing but apps_root IS reliable (e.g. `bench lint`
-        # before `bench lint-schema` has ever been run locally) -- fine,
-        # walking the real bench directly is just as correct.
-    if not apps_root:
+        # Explicitly asked for a cache file that isn't there, AND no
+        # reliable apps_root to fall back to -- almost certainly a
+        # forgotten `bench lint-schema <app>` step, not an intentional
+        # choice. Erroring here is the whole point: silently building an
+        # incomplete schema from a wrong directory would look like
+        # success and just be wrong.
         raise SystemExit(
-            "No --schema-cache and no reliable --apps-root -- can't resolve the DocType "
-            "schema at all. Generate a cache with 'bench lint-schema <app>' and pass it "
-            "via --schema-cache, or run this from inside a real bench."
+            f"--schema-cache was given as '{schema_cache}' but that file doesn't exist, "
+            f"and there's no reliable --apps-root to fall back to (this doesn't look like "
+            f"it's running inside a real bench). Generate the cache with "
+            f"'bench lint-schema <app>' where the full bench is present, and commit it."
         )
-    return SchemaIndex.build(apps_root)
+    raise SystemExit(
+        "No reliable --apps-root (this doesn't look like it's running inside a real bench) "
+        "and no --schema-cache given -- can't resolve the DocType schema at all. Generate a "
+        "cache with 'bench lint-schema <app>' and pass it via --schema-cache."
+    )
 
 
 def run_check(paths: list[str], apps_root: str | None, config: LintConfig, rules_dir: str,
@@ -177,7 +189,7 @@ def cmd_check(args):
     diags = run_check(args.paths, args.apps_root, config, args.rules_dir, args.schema_cache)
     baseline_path = args.baseline or config.baseline_file
     baseline_keys = load_baseline(baseline_path) if not args.no_baseline else set()
-    new, baselined = split_baselined(diags, baseline_keys)
+    new, baselined = split_baselined(diags, baseline_keys, baseline_path)
     print_report(diags, new, baselined, args.show_baselined, sys.stdout.isatty(), args.format)
     gate = diags if args.fail_on == "all" else new
     return 1 if any(d.severity == "error" for d in gate) else 0

@@ -22,10 +22,19 @@ class Diagnostic:
     severity: str = "warn"   # error | warn | info | off
     fix: str | None = None
     origin: str = "py"       # "py" or "yaml", for provenance in reports
-
-    def key(self) -> str:
-        """Stable-ish identity for baselining: rule + file + line."""
-        return f"{self.rule_id}:{self.file}:{self.line}"
+    # Precise span, when the anchor node had one (every ast node does in
+    # Python 3.8+) -- 0-indexed column, matching ast's own col_offset and
+    # LSP's Position.character, so no off-by-one translation is needed at
+    # either end. None when a diagnostic was built without a real node
+    # (shouldn't normally happen, but nothing downstream should assume
+    # these are always populated). Deliberately not part of a diagnostic's
+    # baseline identity (see baseline.portable_key) -- that stays
+    # rule+file+line; a diagnostic shifting columns without changing
+    # meaning (e.g. a rename earlier on the same line) shouldn't silently
+    # fall out of the baseline.
+    col: int | None = None
+    end_line: int | None = None
+    end_col: int | None = None
 
 
 class RuleContext:
@@ -44,7 +53,10 @@ class RuleContext:
     def diag(self, node: ast.AST, message: str, rule_id: str, severity: str = "warn",
               fix: str | None = None) -> Diagnostic:
         return Diagnostic(rule_id=rule_id, message=message, file=self.path,
-                           line=getattr(node, "lineno", 0), severity=severity, fix=fix)
+                           line=getattr(node, "lineno", 0), severity=severity, fix=fix,
+                           col=getattr(node, "col_offset", None),
+                           end_line=getattr(node, "end_lineno", None),
+                           end_col=getattr(node, "end_col_offset", None))
 
     def suggest_closest(self, name: str, candidates) -> str | None:
         matches = get_close_matches(name, list(candidates), n=1, cutoff=0.6)
